@@ -1,0 +1,14 @@
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ticket_tracker
+    ports:
+      - "5432:5432"
+    volumes:
+      - ticket_data:/var/lib/postgresql/data
+
+volumes:
+  ticket_data:
