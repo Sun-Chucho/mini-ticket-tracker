@@ -15,7 +15,7 @@ A small support ticket app for Lodwar Services. The backend is an Express REST A
 4. Start the API and UI with `npm run dev`.
 5. Open the Vite URL printed in the terminal (usually `http://localhost:5173`). The API listens on `http://localhost:3001`.
 
-The API creates its table and index on startup. For a production deployment, run schema changes through a migration tool and set `DATABASE_URL` and `PORT` in the service environment. Build the UI with `npm run build`; run the API with `npm start`.
+The API creates its table and index on startup. For a production deployment, run schema changes through a migration tool and set `DATABASE_URL` and `PORT` in the service environment. Run `npm run build` followed by `npm start` to serve the built UI and API from one process. The API also exposes `GET /health`, which checks database connectivity.
 
 ## API
 

@@ -4,10 +4,25 @@ import cors from 'cors';
 const statuses = ['open', 'in_progress', 'closed'];
 const priorities = ['low', 'medium', 'high'];
 
-export function createApp(database) {
+function parseInteger(value) {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return Number.NaN;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : Number.NaN;
+}
+
+export function createApp(database, { staticDirectory } = {}) {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '32kb' }));
+
+  app.get('/health', async (request, response) => {
+    try {
+      await database.query('SELECT 1');
+      response.json({ status: 'ok' });
+    } catch {
+      response.status(503).json({ status: 'error', error: 'Database is unavailable.' });
+    }
+  });
 
   app.get('/tickets/stats', async (request, response, next) => {
     try {
@@ -25,15 +40,16 @@ export function createApp(database) {
   app.get('/tickets', async (request, response, next) => {
     try {
       const { status } = request.query;
-      const page = Number.parseInt(request.query.page ?? '1', 10);
-      const limit = Number.parseInt(request.query.limit ?? '20', 10);
-      if (status && !statuses.includes(status)) {
+      const page = parseInteger(request.query.page ?? '1');
+      const limit = parseInteger(request.query.limit ?? '20');
+      if (status !== undefined && !statuses.includes(status)) {
         return response.status(400).json({ error: 'Status must be open, in_progress, or closed.' });
       }
-      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+      const offset = (page - 1) * limit;
+      if (page < 1 || limit < 1 || limit > 100 || !Number.isSafeInteger(offset)) {
         return response.status(400).json({ error: 'Page must be positive and limit must be between 1 and 100.' });
       }
-      const values = status ? [status, limit, (page - 1) * limit] : [limit, (page - 1) * limit];
+      const values = status ? [status, limit, offset] : [limit, offset];
       const where = status ? 'WHERE status = $1' : '';
       const limitParam = status ? '$2' : '$1';
       const offsetParam = status ? '$3' : '$2';
@@ -74,7 +90,7 @@ export function createApp(database) {
 
   app.patch('/tickets/:id', async (request, response, next) => {
     try {
-      const id = Number(request.params.id);
+      const id = parseInteger(request.params.id);
       const { status, priority } = request.body ?? {};
       if (!Number.isSafeInteger(id) || id < 1) {
         return response.status(400).json({ error: 'Ticket ID must be a positive integer.' });
@@ -95,7 +111,30 @@ export function createApp(database) {
     }
   });
 
+  app.use('/tickets', (request, response) => {
+    response.status(404).json({ error: 'Ticket endpoint not found.' });
+  });
+
+  if (staticDirectory) {
+    app.use(express.static(staticDirectory));
+    app.get('*', (request, response, next) => {
+      response.sendFile('index.html', { root: staticDirectory }, (error) => {
+        if (error) next(error);
+      });
+    });
+  }
+
+  app.use((request, response) => {
+    response.status(404).json({ error: 'Route not found.' });
+  });
+
   app.use((error, request, response, next) => {
+    if (error.type === 'entity.parse.failed') {
+      return response.status(400).json({ error: 'Request body must contain valid JSON.' });
+    }
+    if (error.status && error.status < 500) {
+      return response.status(error.status).json({ error: error.message });
+    }
     console.error(error);
     response.status(500).json({ error: 'Something went wrong. Please try again.' });
   });

@@ -4,12 +4,23 @@ const labels = { open: 'Open', in_progress: 'In progress', closed: 'Closed' };
 const priorities = ['low', 'medium', 'high'];
 
 async function request(path, options) {
-  const response = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Request failed.');
+  let response;
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+    });
+  } catch {
+    throw new Error('Could not reach the ticket service. Check that the API is running and try again.');
+  }
+
+  let data;
+  try {
+    data = response.status === 204 ? null : await response.json();
+  } catch {
+    throw new Error(`The ticket service returned an unreadable response (${response.status}).`);
+  }
+  if (!response.ok) throw new Error(data?.error || `Request failed (${response.status}).`);
   return data;
 }
 

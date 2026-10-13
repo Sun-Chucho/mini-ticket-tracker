@@ -40,11 +40,41 @@ test('GET /tickets applies status filter and pagination', async () => {
   assert.deepEqual(calls[1].values, ['open']);
 });
 
+test('GET /tickets rejects malformed and unsafe pagination values', async () => {
+  const app = createApp(testDatabase(async () => { throw new Error('Database should not be queried'); }));
+  for (const query of ['page=2x', 'page=9007199254740991&limit=100', 'limit=1.5', 'status=']) {
+    const response = await request(app).get(`/tickets?${query}`);
+    assert.equal(response.status, 400, query);
+    assert.equal(typeof response.body.error, 'string', query);
+  }
+});
+
 test('GET /tickets/stats includes zero counts for empty statuses', async () => {
   const app = createApp(testDatabase(async () => ({ rows: [{ status: 'closed', count: 4 }] })));
   const response = await request(app).get('/tickets/stats');
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { open: 0, in_progress: 0, closed: 4 });
+});
+
+test('POST /tickets rejects malformed JSON with a readable error', async () => {
+  const app = createApp(testDatabase(async () => { throw new Error('Database should not be queried'); }));
+  const response = await request(app)
+    .post('/tickets')
+    .set('Content-Type', 'application/json')
+    .send('{"title":');
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(response.body, { error: 'Request body must contain valid JSON.' });
+});
+
+test('GET /health reports database availability', async () => {
+  const healthy = createApp(testDatabase(async () => ({ rows: [{ '?column?': 1 }] })));
+  const unavailable = createApp(testDatabase(async () => { throw new Error('connection refused'); }));
+
+  assert.deepEqual((await request(healthy).get('/health')).body, { status: 'ok' });
+  const response = await request(unavailable).get('/health');
+  assert.equal(response.status, 503);
+  assert.deepEqual(response.body, { status: 'error', error: 'Database is unavailable.' });
 });
 
 test('PATCH /tickets/:id updates status and returns 404 for a missing ticket', async () => {
